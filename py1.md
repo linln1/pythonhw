@@ -1,0 +1,172 @@
+# Python程序设计作业#1
+
+提交邮箱：buptne@gmail.com
+
+邮件标题：py1-2018211308-2018211408-林振宇
+
+邮件附件：py1-2018211308-2018211408-林振宇.md（即本文件）
+
+截止时间：2020年10月26日23:59:59
+
+## 作业题目
+
+使用asyncio的streams（coroutine based API）实现SOCKS5服务器。
+
+协议参考：RFC 1928 - SOCKS Protocol Verison 5
+
+只需要实现CMD X‘01’（即CONNECT）
+
+只需要实现METHOD X‘00’（即NO AUTHENTICATION REQUIRED）
+
+## 作业内容
+
+程序源代码嵌入下方的code block中。
+
+```python
+import logging
+import asyncio
+import struct
+import socket
+
+local_addr = '127.0.0.1'
+local_port = 8888
+socks5_version = 5
+
+logging.basicConfig(level=logging.DEBUG)
+
+
+async def run(reader, writer):
+# step1
+    data = await reader.read(2)
+    print("the decode of data is {}".format(data))
+    version, nmethods = struct.unpack("!BB", data)
+    assert version == socks5_version
+    assert nmethods > 0
+
+    # 读入方法
+    methods = []
+    for i in range(nmethods):
+        data = await reader.read(1)
+        methods.append(struct.unpack("!B", data)[0])
+    if 0x00 not in set(methods):
+        print("do not support NO AUTHENTICATION REQUIRED METHOD!")
+
+# step2
+    data = struct.pack("!BB", version, 0x00)
+    writer.write(data)
+    await writer.drain()
+
+# step3
+    await asyncio.sleep(1)
+    data = await reader.read(2)
+    subprotocol, status = struct.unpack("!BB", data)
+    assert status == 0
+
+# step4
+    data = await reader.read(4)
+    version, cmd, _, protocol_type = struct.unpack("!BBBB", data)
+    assert version == socks5_version
+
+    if protocol_type == 1:  # IPv4
+        data = await reader.read(4)
+        address = socket.inet_ntoa(data)
+    elif protocol_type == 3:  # domain name
+        data = await reader.read(1)
+        length = data[0]
+        address = reader.read(length).decode()
+    elif protocol_type == 4:  # IPv6
+        data = await reader.read(16)
+        address = socket.inet_ntop(socket.AF_INET6, data)
+    else:
+        return
+    data = await reader.read(2)
+    port = struct.unpack("!H", data)[0]
+    print(address, port)
+
+
+# step5
+    try:
+        if cmd == 1:
+            # 作为一个客户端，向remote_server发起连接
+            remote_reader, remote_writer = await asyncio.open_connection(address, port)
+            print('Connect to {} {} successfully'.format(address, port))
+        else:
+            print('Do not support this service now')
+            await writer.close()
+        print("connect to remote Server {} {}".format(address, port))
+        data = struct.pack("!BBBBIH", socks5_version, 0, 0, protocol_type, address, port)
+    except Exception as err:
+        logging.error(err)
+        data = struct.pack("!BBBBIH", socks5_version, 5, 0, protocol_type, 0, 0)
+    writer.write(data)
+    await writer.drain()
+
+# step6
+    if data[0] == 0 and cmd == 1:
+        # 从客户端接收信息,并且发给远程服务器
+        info = await reader.read()
+        remote_writer.write(info)
+        await remote_writer.drain()
+        # 从远程服务器收到回答，转回客户端
+        reply = await remote_reader.read()
+        writer.write(reply)
+        await writer.drain()
+
+
+async def main():
+    server = await asyncio.start_server(run, '10.28.255.3', 8888)
+    addr = server.sockets[0].getsockname()
+    print(f'Serving on {addr}')
+
+    async with server:
+        await server.serve_forever()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+
+
+```
+
+> ## 代码说明（可选）
+
+源代码中不要出现大段的说明注释，如果需要可以可以在本节中加上说明。
+
+>> ## step1::
+- #### *客户端首先向SOCKS服务器自己的协议版本号，以及支持的认证方法*
+- #### *0x05 ：SOCKS5 Protocol Version*
+- #### *0x01 ：支持的认证方法数量*
+- #### *0x00 ：免认证*
+
+>> ## step2::
+- #### *ProxyServer 返回一个方法选择消息*
+- #### *0x05 ：SOCKS Protocol Version*
+- #### *若返回XFF表示没有方法被选中，客户端需要关闭连接 这里应该返回 0x00, NO AUTHENTICATION REQUIRED*
+
+>> ## step3::
+- #### *客户端根据服务器选定方法认证*
+- #### *代理服务器响应认证结果*
+- #### *0x01 ：子协商版本*
+- #### *0x00 ：认证成功*
+
+>> ## step4::
+- #### *客户端请求代理服务器*
+
+|<0x05>|  <0x01>   |     <0x00>   | <0x01>   |  <0x7f 0x00 0x00 0x01>  |  <0x88 0x88> |
+| :-----: | :----: | :----: | :----: | :----: | :----: |
+|SOCKS5 |   CONNECT  |   RSV   |  IPV4  |    127 . 0  . 0  .  1   |  Port:8888 |
+- #### *SOCKS 服务器将使用目标主机，目标端口, 客户端的源地址和端口号来评估 CONNECT 请求是否通过。成功之后后续流量都会被转发到目标主机的目标端口。*
+
+>> ## step5::
+- #### *代理服务器连接目标主机, 并返回结果给客户端*
+|<0x05>   |   <0x00>    |    <0x00>   |    <0x01>   |  <0x7f 0x00 0x00 0x01>   |  <0xaa 0xaa> |
+| :-----: | :----: | :----: | :----: | :----: | :----: |
+|  协议版本  | 成功    |     保留   |    IPV4    |    代理服务器IP   |    代理服务器端口  |
+
+>> ## step6::
+- #### 客户端发送请求数据给代理服务器，原样转发给目标服务器,并将目标服务器的响应发送给客户端,代理服务器不会对客户端或者目标服务器的报文做任何解析
+- #### 当一个响应（REP值不为X00）指示失败的时候，SOCKS服务器必须在发送这个响应后立刻断开这条TCP连接。这必须发生在检测到引起失败的原因之后的10秒内
+- #### tcp就直接转 udp还须要做点工作
+- #### 建立连接成功，开始交换数据
+
+##  [reference] https://rushter.com/blog/python-socks-server/
