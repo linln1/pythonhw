@@ -1,3 +1,8 @@
+'''
+    @author linln1
+    @copyright(C) 2020 
+'''
+
 import asyncio
 import struct
 
