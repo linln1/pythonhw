@@ -25,6 +25,8 @@
     - 这是一个与底层IO输入缓冲区交互的流量控制方法。当缓冲区达到上限时，drain()阻塞，待到缓冲区回落到下限时，写操作可以被恢复。当不需要等待时，drain()会立即返回。
   
 ## socks协议
+[RFC1928]
+
 - *socks协议的设计初衷是在保证网络隔离的情况下，提高部分人员的网络访问权限，但是国内似乎很少有组织机构这样使用。一般情况下，大家都会使用更新的网络安全技术来达到相同的目的。*
 - *但是由于socksCap32和PSD这类软件，人们找到了socks协议新的用途：突破网络通信限制，这和该协议的设计初衷正好相反。另外，socks协议也可以用来内网穿透。*
 - *socks支持多种用户身份验证方式和通信加密方式*
@@ -36,3 +38,61 @@
 ![image](socks5.png)
 ![image](proxy.png)
 ![image](baidu.png)
+
+
+> # ***2020/10/28 Second HW***: Using httplib/aiohttp to implements a http tunnel to get through the firewall
+
+A kind of method to replace the HTTP proxy
+
+[RFC2817]
+
+Requesting a Tunnel with CONNECT
+
+   A CONNECT method requests that a proxy establish a tunnel connection
+   on its behalf. The Request-URI portion of the Request-Line is always
+   an 'authority' as defined by URI Generic Syntax [2], which is to say
+   the host name and port number destination of the requested connection
+   separated by a colon:
+
+      CONNECT server.example.com:80 HTTP/1.1
+      Host: server.example.com:80
+      
+   Other HTTP mechanisms can be used normally with the CONNECT method --
+   except end-to-end protocol Upgrade requests, of course, since the
+   tunnel must be established first.
+
+   For example, proxy authentication might be used to establish the
+   authority to create a tunnel:
+   
+      CONNECT server.example.com:80 HTTP/1.1
+      Host: server.example.com:80
+      Proxy-Authorization: basic aGVsbG86d29ybGQ=
+
+   Like any other pipelined HTTP/1.1 request, data to be tunneled may be
+   sent immediately after the blank line. The usual caveats also apply:
+   data may be discarded if the eventual response is negative, and the
+   connection may be reset with no response if more than one TCP segment
+   is outstanding.
+   
+Establishing a Tunnel with CONNECT
+   Any successful (2xx) response to a CONNECT request indicates that the
+   proxy has established a connection to the requested host and port,
+   and has switched to tunneling the current connection to that server
+   connection.
+   
+The relationship with the SOCKS5
+
+Similarity:
+    
+        - should memtion the targeted host and port
+        - should set up the tunnel that counld transfer any kind of data, which is transparent to tunnel
+        - the data after the head along belongs to the content
+        - client authentication should be provided
+        
+Differences:
+        
+        - client and http tunnel can be runned in the same TLS layer
+        - client and remote server are in the same TLS layer
+        - use TLS to protect the username and password in the proxy request
+        - tunnel does not identify domain name and IP address in the Connection request
+        - HTTP/1.1 can transfer any kind of data structures.
