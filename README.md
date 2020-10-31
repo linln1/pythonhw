@@ -79,7 +79,9 @@ Establishing a Tunnel with CONNECT
    proxy has established a connection to the requested host and port,
    and has switched to tunneling the current connection to that server
    connection.
-   
+
+![image](web_tunnel.png.webp)
+
 The relationship with the SOCKS5
 
 Similarity:
