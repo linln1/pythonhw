@@ -1,51 +1,22 @@
-# import asyncio
-#
-# async def run(cmd):
-#     proc = await asyncio.create_subprocess_shell(
-#         cmd,
-#         stdout=asyncio.subprocess.PIPE,
-#         stderr=asyncio.subprocess.PIPE)
-#
-#     stdout, stderr = await proc.communicate()
-#
-#     print(f'[{cmd!r} exited with {proc.returncode}]')
-#     if stdout:
-#         print(f'[stdout]\n{stdout.decode()}')
-#     if stderr:
-#         print(f'[stderr]\n{stderr.decode()}')
-#
-# if __name__ == '__main__':
-#     asyncio.run(run('ls /zzz'))
-# import asyncio
-#
-# async def ns_lookup():
-#     proc = await asyncio.create_subprocess_shell(
-#         'nslookup', stdin=asyncio.subprocess.PIPE,
-#         stdout=asyncio.subprocess.PIPE)
-#
-#     proc.stdin.write('www.bupt.edu.cn'.encode())
-#     await proc.stdin.drain()
-#
-#     data = await proc.stdout.read()
-#     data = data.decode()
-#
-#     await proc.wait()
-#     return data
-#
-# if __name__ == '__main__':
-#     data = asyncio.run(ns_lookup())
-#     print(f"Result: {data}")
-
 import asyncio
-from aiohttp import web
 
-async def init(loop):
-    app = web.Application(loop=loop)
-    app.router.add_route('GET', '/', index)
-    app.router.add_route('GET', '/hello/{name}', hello)
-    srv = await loop.create_server(app.make_handler(), '127.0.0.1', 8000)
-    print('Server started at http://127.0.0.1:8000...')
-    return srv
+@asyncio.coroutine
+def wget(host):
+    print('wget %s...' % host)
+    connect = asyncio.open_connection(host, 80)
+    reader, writer = yield from connect
+    header = 'GET / HTTP/1.0\r\nHost: %s\r\n\r\n' % host
+    writer.write(header.encode('utf-8'))
+    yield from writer.drain()
+    while True:
+        line = yield from reader.readline()
+        if line == b'\r\n':
+            break
+        print('%s header > %s' % (host, line.decode('utf-8').rstrip()))
+    # Ignore the body, close the socket
+    writer.close()
 
 loop = asyncio.get_event_loop()
-loop.run_until_complete(init(loop))
+tasks = [wget(host) for host in ['www.sina.com.cn', 'www.sohu.com', 'www.163.com']]
+loop.run_until_complete(asyncio.wait(tasks))
+loop.close()
