@@ -11,6 +11,9 @@ import traceback
 from enum import Enum
 ReadMode = Enum('ReadMod', ('EXACT', 'LINE', 'MAX', 'UNTIL'))
 
+remoteProxyHost = '127.0.0.1'
+remoteProxyPort = 8889
+
 class MyError(Exception):
     pass
 
@@ -90,6 +93,29 @@ def socks5EncodeBindHost(bindHost):
         hostData = struct.pack(f'!B{len(bindHost)}s', len(bindHost), bindHost)
     return atyp, hostData
 
+async def remoteProxyRun(reader, writer):
+    address = await aioRead(reader, ReadMode.LINE)
+    host_port = address.decode()
+    host_port = host_port.replace("\r\n", " ")
+    host = host_port.split(":")[0]
+    port = host_port.split(":")[1]
+    print('remote proxy server recieve host: {}' % host)
+    print('remote proxy server recieve port: {}' % port)
+
+    try:
+        rm_reader, rm_writer = await asyncio.open_connection(host, int(port))
+        reply = f'HTTP/1.1 200 OK\r\n'
+        await aioWrite(writer, reply.encode())
+    except Exception as Err:
+        MyError(Err)
+        reply = "HTTP/1.1" + str(Err) + " Fail\r\n\r\n"
+        await aioWrite(writer, reply.encode())
+
+    await asyncio.wait({
+        asyncio.create_task(xferData(reader, rm_writer)),
+        asyncio.create_task(xferData(rm_reader, writer))
+    })
+
 async def doClient(clientR, clientW):
     serverR, serverW = None, None
     try:
@@ -132,7 +158,10 @@ async def doClient(clientR, clientW):
             data = struct.pack(f'!ssss{len(hostData)}sH', b'\x05', b'\x00', b'\x00', atyp, hostData, int(bindPort))
             await aioWrite(clientW, data, logHint='reply')
         else:
-            await aioWrite(clientW, f'{proto} 200 OK\r\n\r\n'.encode(), logHint='response')
+            serverR, serverW = await asyncio.open_connection(remoteProxyHost, remoteProxyPort)
+            connect_info = dstHost + ':' + dstPort + '\r\n'
+            await aioWrite(serverW, connect_info.encode(), logHint='Connect remote Proxy')
+            # await aioWrite(clientW, f'{proto} 200 OK\r\n\r\n'.encode(), logHint='response')
 
         await asyncio.wait({
             asyncio.create_task(xferData(clientR, serverW, logHint=f'{logHint} fromClient')),
@@ -150,12 +179,19 @@ async def doClient(clientR, clientW):
         log.error(f'{traceback.format_exc()}')
         exit(1)
 
-async def localTask():
+async def localTask(): #启动本地代理服务器
     srv = await asyncio.start_server(doClient, host=args.listenHost, port=args.listenPort)
     addrList = list([s.getsockname() for s in srv.sockets])
     log.info(f'LISTEN {addrList}')
     async with srv:
         await srv.serve_forever()
+
+async def remoteTask(): #启动远程代理服务器
+    rm_srv = await asyncio.start_server(remoteProxyRun, host=remoteProxyHost, port=remoteProxyPort)
+    addrList = list([s.getsockname() for s in rm_srv.sockets])
+    log.info(f'LISTEN Client Proxy {addrList}')
+    async with rm_srv:
+        await rm_srv.serve_forever()
 
 async def xferData(srcR, dstW, *, logHint=None):
     try:
@@ -169,7 +205,6 @@ async def xferData(srcR, dstW, *, logHint=None):
 
 async def main():
     asyncio.create_task(localTask())
-
     while True:
         await asyncio.sleep(1)
 
@@ -187,7 +222,7 @@ if __name__ == '__main__':
 
     _parser = argparse.ArgumentParser(description='socks5 https dual proxy server')
     _parser.add_argument('--host', dest='listenHost', metavar='listen_host', default='127.0.0.1', help='proxy listen host default listen all interfaces')
-    _parser.add_argument('--port', dest='listenPort', metavar='listen_port', default=8888, required=False, help='proxy listen port')
+    _parser.add_argument('--port', dest='listenPort', metavar='listen_port', default= 8888, required=False, help='proxy listen port')
     args = _parser.parse_args()
 
     if sys.platform == 'win32':

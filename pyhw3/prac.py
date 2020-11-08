@@ -194,8 +194,8 @@ async def get_header(reader):
     return headers
 
 async def remote_proxy(reader, writer):
-    address = await aioRead(reader, ReadMode.LINE, logHint='methods')#address 的长度
-    host_port = address.decode().split('\r\n')
+    path = await aioRead(reader, ReadMode.LINE, logHint='methods')#address 的长度
+    host_port = path.decode().split('\r\n')
     host = host_port.split(":")[0]
     port = host_port.split(":")[1]
     try:
@@ -207,7 +207,7 @@ async def remote_proxy(reader, writer):
         reply = "HTTP/1.1" + str(Err) + " Fail\r\n\r\n"
         await aioWrite(writer, reply.encode())
 
-    tasks = [transfer_server_client(reader, rm_writer), transfer_client_server(rm_reader, writer)]
+    tasks = [transfer_client_server(reader, rm_writer), transfer_server_client(rm_reader, writer)]
     await asyncio.wait(tasks)
 
 async def tunnel_run(client_reader, client_writer):
@@ -217,7 +217,6 @@ async def tunnel_run(client_reader, client_writer):
 
         path = urlunparse(("", "", path, params, query, ""))
         req_headers = " ".join([method, path, version]) + "\r\n" + "\r\n".join(req_headers.split('\r\n')[1:])
-        print(address)
         i = path.find(':')
         host = ''
         port = 0
@@ -237,10 +236,10 @@ async def tunnel_run(client_reader, client_writer):
             # client_writer.write(reply.encode())
             # await client_writer.drain()
             reply = "Connection with remote Proxy OK\r\n"
-            client_writer.write(reply)
-            await client_writer.drain()
-            address += '\r\n'
-            rm_writer.write(address.encode())
+            print(reply)
+            path += '\r\n'
+            print(path)
+            rm_writer.write(path.encode())
             await rm_writer.drain()
         except Exception as exc:
             logExc(exc)
@@ -258,7 +257,7 @@ async def tunnel_run(client_reader, client_writer):
         # req_headers += '\r\n'
         # await aioWrite(rm_writer, req_headers.encode())
 
-        tasks = [transfer_server_client(rm_reader, client_writer), transfer_client_server(client_reader, rm_writer)]
+        tasks = [transfer_client_server(client_reader, rm_writer), transfer_server_client(rm_reader, client_writer)]
         await asyncio.wait(tasks)
     except Exception as exc:
         logExc(exc)
@@ -280,9 +279,9 @@ async def localTask():
             await tunnel_srv.serve_forever()
 
     elif args.proto == 'multi level proxy':
+        remote_srv = await asyncio.start_server(remote_proxy, host=remoteProxyHost, port=remoteProxyPort)
         local_srv = await asyncio.start_server(tunnel_run, host=args.listenHost, port=args.listenPort)
         tunnel_addrList = list([t.getsockname() for t in local_srv.sockets])
-        remote_srv = await asyncio.start_server(remote_proxy, host=remoteProxyHost,port=remoteProxyPort)
         log.info(f'Listen {tunnel_addrList} and use two level proxy')
         async with local_srv and remote_srv:
             await local_srv.serve_forever()
@@ -306,7 +305,7 @@ if __name__ == '__main__':
     log.setLevel(logging.DEBUG)
 
     _parser = argparse.ArgumentParser(description='server')
-    _parser.add_argument('--protocol', dest='proto', default='http tunnel', action='store_true', help='choose protocol : socks5 / http_tunnel')
+    _parser.add_argument('--protocol', dest='proto', default='multi level proxy', action='store_true', help='choose protocol : socks5 / http_tunnel')
 
     _parser.add_argument('--exc', dest='logExc', default=False, action='store_true', help='show exception traceback')
     _parser.add_argument('--host', dest='listenHost', default='127.0.0.1', metavar='listen_host', help='proxy listen host default listen all interfaces')
@@ -315,7 +314,7 @@ if __name__ == '__main__':
 
     args = _parser.parse_args()
 
-    # if sys.platform == 'win32':
-    #     asyncio.set_event_loop(asyncio.ProactorEventLoop())
+    if sys.platform == 'win32':
+        asyncio.set_event_loop(asyncio.ProactorEventLoop())
 
     asyncio.run(main())

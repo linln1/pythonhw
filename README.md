@@ -98,3 +98,14 @@ Differences:
         - use TLS to protect the username and password in the proxy request
         - tunnel does not identify domain name and IP address in the Connection request
         - HTTP/1.1 can transfer any kind of data structures.
+
+> # ***2020/11/8 Third HW***: Using local/remote proxy to get through the firewall to get the webpage
+
+Based on the hw1 and hw2
+
+Structure is as follow:
+![structure](pyhw3\hw3.jpg)
+
+Test Results:
+  ![bilibili](pyhw3\bilibili.jpg)
+  ![bilibili](pyhw3\bilibili_2.jpg)
