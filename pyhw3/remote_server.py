@@ -13,6 +13,8 @@ ReadMode = Enum('ReadMod', ('EXACT', 'LINE', 'MAX', 'UNTIL'))
 
 remoteProxyHost = '127.0.0.1'
 remoteProxyPort = 8889
+remotesocksPort = 8890
+
 class MyError(Exception):
     pass
 
@@ -60,42 +62,104 @@ async def aioWrite(w, data, *, logHint=''):
     except ConnectionAbortedError as exc:
         raise MyError(f'sendEXC={exc} {logHint}')
 
-async def xferData(srcR, dstW, *, logHint=None):
+async def transfer_client_remote(cl_reader, rm_writer, logHint=None):
     try:
         while True:
-            data = await aioRead(srcR, ReadMode.MAX, maxLen=65535, logHint='')
-            await aioWrite(dstW, data, logHint='')
+            data = await aioRead(cl_reader, ReadMode.MAX, maxLen=65535, logHint='')
+            await aioWrite(rm_writer, data, logHint='')
     except MyError as exc:
         log.info(f'{logHint} {exc}')
 
-    await aioClose(dstW, logHint=logHint)
+async def transfer_remote_client(rm_reader, cl_writer, logHint=None):
+    try:
+        while True:
+            data = await aioRead(rm_reader, ReadMode.MAX, maxLen=65535, logHint='recv data from server')
+            await aioWrite(cl_writer, data, logHint='')
+    except MyError as exc:
+        log.info(f'{logHint} {exc}')
+
+async def socks5ReadDstHost(r, atyp, *, logHint):
+    dstHost = None
+    if atyp == b'\x01':
+        dstHost = await aioRead(r, ReadMode.EXACT, exactLen=4, logHint=f'{logHint} ipv4')
+        dstHost = str(ipaddress.ip_address(dstHost))
+    elif atyp == b'\x03':
+        dataLen = await aioRead(r, ReadMode.EXACT, exactLen=1, logHint=f'{logHint} fqdnLen')
+        dataLen = dataLen[0]
+        dstHost = await aioRead(r, ReadMode.EXACT, exactLen=dataLen, logHint=f'{logHint} fqdn')
+        dstHost = dstHost.decode('utf8')
+    elif atyp == b'\x04':
+        dstHost = await aioRead(r, ReadMode.EXACT, exactLen=16, logHint=f'{logHint} ipv6')
+        dstHost = str(ipaddress.ip_address(dstHost))
+    else:
+        raise MyError(f'RECV ERRATYP={atyp} {logHint}')
+    return dstHost
+
+def socks5EncodeBindHost(bindHost):
+    atyp = b'\x03'
+    hostData = None
+    try:
+        ipAddr = ipaddress.ip_address(bindHost)
+        if ipAddr.version == 4:
+            atyp = b'\x01'
+            hostData = struct.pack('!L', int(ipAddr))
+        else:
+            atyp = b'\x04'
+            hostData = struct.pack('!16s', ipaddress.v6_int_to_packed(int(ipAddr)))
+    except Exception:
+        hostData = struct.pack(f'!B{len(bindHost)}s', len(bindHost), bindHost)
+    return atyp, hostData
 
 async def remoteProxyRun(reader, writer):
-    address = await aioRead(reader, ReadMode.LINE)
-    host_port = address.decode()
-    host_port = host_port.replace("\r\n"," ")
-    i = host_port.find(':')
-    if i:
-        host, port = host_port[:i], host_port[i+1:]
+    rm_reader, rm_writer = None, None
+    version = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint=f'1stByte')
+    if b'\x05' == version:
+        proxyType = 'SOCKS5'
+        numMethods = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint='nMethod')
+        await aioRead(reader, ReadMode.EXACT, exactLen=numMethods[0], logHint='methods')
+        await aioWrite(writer, b'\x05\x00', logHint='method.noAuth')
+        await aioRead(reader, ReadMode.EXACT, exactData=b'\x05\x01\x00', logHint='verCmdRsv')
+        atyp = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint='atyp')
+        dstHost = await socks5ReadDstHost(reader, atyp, logHint='dstHost')
+        dstPort = await aioRead(reader, ReadMode.EXACT, exactLen=2, logHint='dstPort')
+        dstPort = int.from_bytes(dstPort, 'big')
+        # 连接远程代理服务器
+
+        rm_reader, rm_writer = await asyncio.open_connection(dstHost, dstPort)
+        bindHost, bindPort, *_ = rm_writer.get_extra_info('sockname')
+
+        atyp, hostData = socks5EncodeBindHost(bindHost)
+        data = struct.pack(f'!ssss{len(hostData)}sH', b'\x05', b'\x00', b'\x00', atyp, hostData, int(bindPort))
+        await aioWrite(writer, data, logHint='reply')
+
     else:
-        host, port = host_port, 8889
+        address = await aioRead(reader, ReadMode.LINE)
+        host_port = address.decode()
+        host_port = host_port.replace("\r\n"," ")
+        i = host_port.find(':')
+        if i:
+            host, port = host_port[:i], host_port[i+1:]
+        else:
+            host, port = host_port, 8889
 
-    try:
-        rm_reader, rm_writer = await asyncio.open_connection(host, int(port))
-        reply = f'HTTP/1.1 200 OK\r\n\r\n'
-        await aioWrite(writer, reply.encode())
-    except Exception as Err:
-        MyError(Err)
-        reply = "HTTP/1.1" + str(Err) + " Fail\r\n\r\n"
-        await aioWrite(writer, reply.encode())
+        try:
+            rm_reader, rm_writer = await asyncio.open_connection(host, int(port))
+            reply = f'HTTP/1.1 200 OK\r\n\r\n'
+            await aioWrite(writer, reply.encode())
+        except Exception as Err:
+            MyError(Err)
+            reply = "HTTP/1.1" + str(Err) + " Fail\r\n\r\n"
+            await aioWrite(writer, reply.encode())
 
-    await asyncio.wait({
-        asyncio.create_task(xferData(reader, rm_writer)),
-        asyncio.create_task(xferData(rm_reader, writer))
-    })
+    if rm_writer:
+        await asyncio.wait({
+            asyncio.create_task(transfer_client_remote(reader, rm_writer)),
+            asyncio.create_task(transfer_remote_client(rm_reader, writer))
+        })
 
-async def remoteTask(): #启动远程代理服务器
-    rm_srv = await asyncio.start_server(remoteProxyRun, host=remoteProxyHost, port=remoteProxyPort)
+
+async def remoteTask(port): #启动远程代理服务器
+    rm_srv = await asyncio.start_server(remoteProxyRun, host=remoteProxyHost, port=port)
     addrList = list([s.getsockname() for s in rm_srv.sockets])
     log.info(f'LISTEN Client Proxy {addrList}')
     async with rm_srv:
@@ -103,7 +167,9 @@ async def remoteTask(): #启动远程代理服务器
 
 
 async def main():
-    asyncio.create_task(remoteTask())
+    t1 = asyncio.create_task(remoteTask(remoteProxyPort))  # 创建任务
+    t2 = asyncio.create_task(remoteTask(remotesocksPort))
+    await asyncio.gather(t1, t2)
     while True:
         await asyncio.sleep(1)
 
