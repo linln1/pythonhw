@@ -81,6 +81,7 @@ async def transfer_remote_client(rm_reader, cl_writer, logHint=None):
 
 async def local_run(clientR, clientW):
     serverR, serverW = None, None
+    submit = "sumbit:" + args.user + " " + args.pwd + " " + "\r\n"
     try:
         clientHost, clientPort, *_ = clientW.get_extra_info('peername')
         logHint = f'{clientHost} {clientPort}'
@@ -88,33 +89,29 @@ async def local_run(clientR, clientW):
             serverR, serverW = await asyncio.open_connection(remoteProxyHost, remotesocksPort)
             bindHost, bindPort, *_ = serverW.get_extra_info('sockname')
             log.info(f'{logHint} connSucc bind {bindHost} {bindPort}')
-            submit = "sumbit:" + args.user + " " + args.pwd +"\r\n"
-            aioWrite(serverW, submit.encode())
+            aioWrite(serverW, submit.encode(), logHint='Connect remote Proxy')
 
         else:
-            line = await aioRead(clientR, ReadMode.LINE, logHint='Connection Request Header')
-            req_headers = await aioRead(clientR, ReadMode.UNTIL, untilSep=b'\r\n\r\n', logHint='Request Header')
-            line = line.decode()
-            method, uri, proto, *_ = line.split()
-
-            if 'connect' == method.lower():
-                proxyType = 'HTTPS'
-                logHint = f'{logHint} {proxyType}'
-                i = uri.find(':')
-                if i:
-                    dstHost, dstPort = uri[:i], uri[i + 1:]
-                else:
-                    dstHost, dstPort = uri, 8889
-            else:
-                raise MyError(f'RECV INVALID={line.strip()} EXPECT=CONNECT')
-            #连接远程代理并且发送数据
+            # line = await aioRead(clientR, ReadMode.LINE, logHint='Connection Request Header')
+            # req_headers = await aioRead(clientR, ReadMode.UNTIL, untilSep=b'\r\n\r\n', logHint='Request Header')
+            # line = line.decode()
+            # method, uri, proto, *_ = line.split()
+            #
+            # if 'connect' == method.lower():
+            #     proxyType = 'HTTPS'
+            #     logHint = f'{logHint} {proxyType}'
+            #     i = uri.find(':')
+            #     if i:
+            #         dstHost, dstPort = uri[:i], uri[i + 1:]
+            #     else:
+            #         dstHost, dstPort = uri, 8889
+            # else:
+            #     raise MyError(f'RECV INVALID={line.strip()} EXPECT=CONNECT')
+            #连接远程代理并且发送登录数据
             logHint = f'{logHint} {remoteProxyHost} {remotetunnelPort}'
             log.info(f'{logHint} connStart...')
             serverR, serverW = await asyncio.open_connection(remoteProxyHost, remotetunnelPort)
-            info = struct.pack("!B", 0x00)
-            await aioWrite(serverW, info, logHint='Connect remote Proxy')
-            connect_info = dstHost + ':' + dstPort + '\r\n'
-            await aioWrite(serverW, connect_info.encode(), logHint='Connect remote Proxy')
+            await aioWrite(serverW, submit.encode(), logHint='Connect remote Proxy')
             # await aioWrite(clientW, f'{proto} 200 OK\r\n\r\n'.encode(), logHint='response')
 
         await asyncio.wait({
