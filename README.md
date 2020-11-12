@@ -104,8 +104,39 @@ Differences:
 Based on the hw1 and hw2
 
 Structure is as follow:
-![structure](pyhw3\hw3.jpg)
+![structure](pyhw3/hw3.jpg)
 
 Test Results:
-  ![bilibili](pyhw3\bilibili.jpg)
-  ![bilibili](pyhw3\bilibili_2.jpg)
+  ![bilibili](pyhw3/bilibili.jpg)
+  ![bilibili](pyhw3/bilibili_2.jpg)
+  
+> # ***2020/11/12 Third HW***: Using aiosqlite\sqlite to realize authentication from local_proxy to remote_proxy
+create database in remote_server
+```sql
+    create database user;
+    drop table user;
+    create table user(
+        name text primary key,
+        password text not null
+    );
+    insert into user(name,password) values('u1', '11');
+    insert into user(name,password) values('u2', '22');
+    insert into user(name,password) values('u3', '33');
+```
+to avoid being sql injection
+instead of using 
+```sql
+    async with aiosqlite.connect('cache.db') as db:
+        async with db.execute("SELECT * FROM USER WHERE USERNAME='{0}'".format(username)) as cur:
+```
+I use ? placeholder so that the sql engine could recognize the variant correctly and avoid the injection
+```sql
+    async with aiosqlite.connect('cache.db') as db:
+        l = []
+        l.append(username, password, caddr, cport)
+        t = tuple(l) #(username, password, caddr, cport, ...)
+        async with db.execute('SELECT * FROM USER WHERE USERNAME=?', t[0])
+            async for row in cur:
+                if row[1] == password:
+                    async with db.execute("SELECT INTO INFO ")
+```

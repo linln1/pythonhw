@@ -151,19 +151,6 @@ async def transfer_server_client(remote_reader, writer):
     await aioClose(writer)
     await aioClose(remote_reader)
 
-async def getline(conn):
-    line = ''
-    while 1:
-        buf = conn.recv(1)
-        if buf == '\r':
-            line += buf
-            buf = conn.recv(1)
-            if buf == '\n':
-                line += buf
-                return line
-        else:
-            line += buf
-
 async def parse_header(raw_headers):
     request_lines = raw_headers.split('\r\n')
     first_line = request_lines[0].split(' ')
@@ -207,7 +194,6 @@ async def tunnel_run(client_reader, client_writer):
                       "\r\n".join(req_headers.split('\r\n')[1:])
 
         # 建立socket用以连接URL指定的机器
-        soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # soc.settimeout(1)
         # 数据转发
         try:
@@ -216,9 +202,8 @@ async def tunnel_run(client_reader, client_writer):
             logExc(exc)
             reply = "HTTP/1.1" + str(exc) + " Fail\r\n\r\n"
             aioWrite(client_writer, reply)
-            soc.close()
         else:  # 若连接成功
-            reply = "HTTP/1.1 200 Connection Established\r\n"
+            reply = "HTTP/1.1 200 OK\r\n"
             aioWrite(client_writer, reply)
 
         # 把HTTP头中连接设置为中断
@@ -228,11 +213,6 @@ async def tunnel_run(client_reader, client_writer):
         else:
             req_headers += req_headers + 'Connection: close\r\n'
         # 发送形如`GET path/params/query HTTP/1.1`
-        # 结束HTTP头
-        req_headers += '\r\n'
-        aioWrite(req_headers)
-        # 发送完毕, 接下来从soc读取服务器的回复
-        # 建立个缓冲区
 
         tasks = [transfer_client_server(client_reader, rm_writer), transfer_server_client(rm_reader, client_writer)]
         await asyncio.wait(tasks)
@@ -250,9 +230,8 @@ async def localTask():
 
     elif args.proto == 'http tunnel':
         tunnel_srv = await asyncio.start_server(tunnel_run, host=args.listenHost, port=args.listenPort)
-
         tunnel_addrList = list([t.getsockname() for t in tunnel_srv.sockets])
-        log.info(f'Listen {tunnel_srv} and use socks5 protocol')
+        log.info(f'Listen {tunnel_addrList} and use socks5 protocol')
         async with tunnel_srv:
             await tunnel_srv.serve_forever()
 
