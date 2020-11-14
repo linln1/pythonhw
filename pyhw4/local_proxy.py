@@ -81,7 +81,7 @@ async def transfer_remote_client(rm_reader, cl_writer, logHint=None):
 
 async def local_run(clientR, clientW):
     serverR, serverW = None, None
-    submit = "sumbit:" + args.user + " " + args.pwd + " " + "\r\n"
+    submit = "sumbit: " + args.user + " " + args.pwd + " " + "\r\n"
     try:
         clientHost, clientPort, *_ = clientW.get_extra_info('peername')
         logHint = f'{clientHost} {clientPort}'
@@ -92,22 +92,6 @@ async def local_run(clientR, clientW):
             aioWrite(serverW, submit.encode(), logHint='Connect remote Proxy')
 
         else:
-            # line = await aioRead(clientR, ReadMode.LINE, logHint='Connection Request Header')
-            # req_headers = await aioRead(clientR, ReadMode.UNTIL, untilSep=b'\r\n\r\n', logHint='Request Header')
-            # line = line.decode()
-            # method, uri, proto, *_ = line.split()
-            #
-            # if 'connect' == method.lower():
-            #     proxyType = 'HTTPS'
-            #     logHint = f'{logHint} {proxyType}'
-            #     i = uri.find(':')
-            #     if i:
-            #         dstHost, dstPort = uri[:i], uri[i + 1:]
-            #     else:
-            #         dstHost, dstPort = uri, 8889
-            # else:
-            #     raise MyError(f'RECV INVALID={line.strip()} EXPECT=CONNECT')
-            #连接远程代理并且发送登录数据
             logHint = f'{logHint} {remoteProxyHost} {remotetunnelPort}'
             log.info(f'{logHint} connStart...')
             serverR, serverW = await asyncio.open_connection(remoteProxyHost, remotetunnelPort)
@@ -158,8 +142,8 @@ if __name__ == '__main__':
     _parser.add_argument('--proto', dest='proto', metavar='protocol', default = 'http tunnel')
     _parser.add_argument('--host', dest='listenHost', metavar='listen_host', default='127.0.0.1', help='proxy listen host default listen all interfaces')
     _parser.add_argument('--port', dest='listenPort', metavar='listen_port', default= 8888, required=False, help='proxy listen port')
-    _parser.add_argument('--username', dest='user', metavar='user', default='root', help='username')
-    _parser.add_argument('--password', dest='pwd', metavar='pwd', default='020900', help='password')
+    _parser.add_argument('--username', dest='user', metavar='user', default='u1', help='username')
+    _parser.add_argument('--password', dest='pwd', metavar='pwd', default='11', help='password')
 
     args = _parser.parse_args()
 

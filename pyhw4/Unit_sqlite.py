@@ -40,8 +40,6 @@ async def aiomysql_sample(loop):
     pool.close()
     await pool.wait_closed()
 
-
-
 if __name__ == '__main__':
     myconn = pymysql.connect(host='localhost', user = 'root', password = '020900', charset = 'utf8mb4')
     cursor = myconn.cursor()

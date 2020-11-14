@@ -112,75 +112,70 @@ def socks5EncodeBindHost(bindHost):
         hostData = struct.pack(f'!B{len(bindHost)}s', len(bindHost), bindHost)
     return atyp, hostData
 
-async def remoteProxyRun(reader, writer):
+async def remoteProxyRun(reader, writer, logHint=None):
     rm_reader, rm_writer = None, None
     submit = await aioRead(reader, ReadMode.LINE)
     if submit.decode().split(" ")[0] == "sumbit:":
         params = submit.decode().split(" ")
         username, password = params[1], params[2]
         async with aiosqlite.connect('cache.db') as db:
-            l = []
-            l.append(username, password)
-            t = tuple(l)
-            async with db.execute('SELECT * FROM USER WHERE USERNAME=?', t[0]) as cur:
-                async for row in cur:#一般也就找到一行记录
-                    if row[1] == t[1]:
-                        version = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint=f'1stByte')
-                        if b'\x05' == version:
-                            proxyType = 'SOCKS5'
-                            numMethods = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint='nMethod')
-                            await aioRead(reader, ReadMode.EXACT, exactLen=numMethods[0], logHint='methods')
-                            await aioWrite(writer, b'\x05\x00', logHint='method.noAuth')
-                            await aioRead(reader, ReadMode.EXACT, exactData=b'\x05\x01\x00', logHint='verCmdRsv')
-                            atyp = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint='atyp')
-                            dstHost = await socks5ReadDstHost(reader, atyp, logHint='dstHost')
-                            dstPort = await aioRead(reader, ReadMode.EXACT, exactLen=2, logHint='dstPort')
-                            dstPort = int.from_bytes(dstPort, 'big')
-                            # 连接远程代理服务器
+            async with db.execute('SELECT * FROM USER WHERE USERNAME=? and PASSWORD=?', (username, password, ) ) as cur:
+                version = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint=f'1stByte')
+                if b'\x05' == version:
+                    proxyType = 'SOCKS5'
+                    numMethods = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint='nMethod')
+                    await aioRead(reader, ReadMode.EXACT, exactLen=numMethods[0], logHint='methods')
+                    await aioWrite(writer, b'\x05\x00', logHint='method.noAuth')
+                    await aioRead(reader, ReadMode.EXACT, exactData=b'\x05\x01\x00', logHint='verCmdRsv')
+                    atyp = await aioRead(reader, ReadMode.EXACT, exactLen=1, logHint='atyp')
+                    dstHost = await socks5ReadDstHost(reader, atyp, logHint='dstHost')
+                    dstPort = await aioRead(reader, ReadMode.EXACT, exactLen=2, logHint='dstPort')
+                    dstPort = int.from_bytes(dstPort, 'big')
+                    # 连接远程代理服务器
 
-                            rm_reader, rm_writer = await asyncio.open_connection(dstHost, dstPort)
-                            bindHost, bindPort, *_ = rm_writer.get_extra_info('sockname')
+                    rm_reader, rm_writer = await asyncio.open_connection(dstHost, dstPort)
+                    bindHost, bindPort, *_ = rm_writer.get_extra_info('sockname')
 
-                            atyp, hostData = socks5EncodeBindHost(bindHost)
-                            data = struct.pack(f'!ssss{len(hostData)}sH', b'\x05', b'\x00', b'\x00', atyp, hostData, int(bindPort))
-                            await aioWrite(writer, data, logHint='reply')
+                    atyp, hostData = socks5EncodeBindHost(bindHost)
+                    data = struct.pack(f'!ssss{len(hostData)}sH', b'\x05', b'\x00', b'\x00', atyp, hostData, int(bindPort))
+                    await aioWrite(writer, data, logHint='reply')
 
+                else:
+                    proxyType = 'HTTP TUNNEL'
+                    line = await aioRead(reader, ReadMode.LINE, logHint='Connection Request Header')
+                    line = version + line
+                    req_headers = await aioRead(reader, ReadMode.UNTIL, untilSep=b'\r\n\r\n',
+                                                logHint='Request Header')
+                    line = line.decode()
+                    method, uri, proto, *_ = line.split()
+
+                    if 'connect' == method.lower():
+                        proxyType = 'HTTPS'
+                        logHint = f'{logHint} {proxyType}'
+                        i = uri.find(':')
+                        if i:
+                            dstHost, dstPort = uri[:i], uri[i + 1:]
                         else:
-                            proxyType = 'HTTP TUNNEL'
-                            line = await aioRead(reader, ReadMode.LINE, logHint='Connection Request Header')
-                            line = version + line
-                            req_headers = await aioRead(reader, ReadMode.UNTIL, untilSep=b'\r\n\r\n',
-                                                        logHint='Request Header')
-                            line = line.decode()
-                            method, uri, proto, *_ = line.split()
+                            dstHost, dstPort = uri, 8889
+                    else:
+                        raise MyError(f'RECV INVALID={line.strip()} EXPECT=CONNECT')
+                    # 连接远程代理并且发送数据
+                    logHint = f'{logHint} {dstHost} {dstPort}'
+                    log.info(f'{logHint} connStart...')
+                    try:
+                        rm_reader, rm_writer = await asyncio.open_connection(dstHost, int(dstPort))
+                        reply = f'HTTP/1.1 200 OK\r\n\r\n'
+                        await aioWrite(writer, reply.encode())
+                    except Exception as Err:
+                        MyError(Err)
+                        reply = "HTTP/1.1" + str(Err) + " Fail\r\n\r\n"
+                        await aioWrite(writer, reply.encode())
 
-                            if 'connect' == method.lower():
-                                proxyType = 'HTTPS'
-                                logHint = f'{logHint} {proxyType}'
-                                i = uri.find(':')
-                                if i:
-                                    dstHost, dstPort = uri[:i], uri[i + 1:]
-                                else:
-                                    dstHost, dstPort = uri, 8889
-                            else:
-                                raise MyError(f'RECV INVALID={line.strip()} EXPECT=CONNECT')
-                            # 连接远程代理并且发送数据
-                            logHint = f'{logHint} {dstHost} {dstPort}'
-                            log.info(f'{logHint} connStart...')
-                            try:
-                                rm_reader, rm_writer = await asyncio.open_connection(dstHost, int(dstPort))
-                                reply = f'HTTP/1.1 200 OK\r\n\r\n'
-                                await aioWrite(writer, reply.encode())
-                            except Exception as Err:
-                                MyError(Err)
-                                reply = "HTTP/1.1" + str(Err) + " Fail\r\n\r\n"
-                                await aioWrite(writer, reply.encode())
-
-                        if rm_writer:
-                            await asyncio.wait({
-                                asyncio.create_task(transfer_client_remote(reader, rm_writer)),
-                                asyncio.create_task(transfer_remote_client(rm_reader, writer))
-                            })
+                if rm_writer:
+                    await asyncio.wait({
+                        asyncio.create_task(transfer_client_remote(reader, rm_writer)),
+                        asyncio.create_task(transfer_remote_client(rm_reader, writer))
+                    })
 
 
 async def remoteTask(port): #启动远程代理服务器
