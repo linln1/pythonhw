@@ -130,13 +130,14 @@ instead of using
         async with db.execute("SELECT * FROM USER WHERE USERNAME='{0}'".format(username)) as cur:
 ```
 I use ? placeholder so that the sql engine could recognize the variant correctly and avoid the injection
-```sql
-    async with aiosqlite.connect('cache.db') as db:
-        l = []
-        l.append(username, password, caddr, cport)
-        t = tuple(l) #(username, password, caddr, cport, ...)
-        async with db.execute('SELECT * FROM USER WHERE USERNAME=?', t[0])
-            async for row in cur:
-                if row[1] == password:
-                    async with db.execute("SELECT INTO INFO ")
+```python
+    if submit.decode().split(" ")[0] == "sumbit:":
+        params = submit.decode().split(" ")
+        username, password = params[1], params[2]
+        async with aiosqlite.connect('cache.db') as db:
+            async with db.execute('SELECT * FROM USER WHERE USERNAME=? and PASSWORD=?', (username, password, ) ) as cur:
 ```
+**multi user login and request for webpage**
+![result](pyhw4/multiuser.jpg)
+
+![result](pyhw4/result.jpg)
