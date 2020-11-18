@@ -92,11 +92,16 @@ async def send_data_to_server(rm_writer, user=None):
     while True:
         start = time()
         if uBucket.status:
+            # available = 0.0
+            # c.execute("SELECT BANDWIDTH FROM USER WHERE USERNAME=?",(user,))
+            # for band in c:
+            #     available = args.lim - band
+            # dps = uBucket.write(available)
             dps = uBucket.write(args.lim)
             DataBaseLock.acquire()
             c.execute("UPDATE USER SET BANDWITH=? WHERE USERNAME=?", (len(dps), user,))
             DataBaseLock.release()
-            await aioWrite(rm_writer, uBucket.write(args.lim), logHint='')
+            await aioWrite(rm_writer, dps, logHint='')
         await asyncio.sleep(1 - (time() - start))
 
 async def recieve_data_from_server(rm_reader, logHint=None, user=None):
