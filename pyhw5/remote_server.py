@@ -272,7 +272,7 @@ class leakyBucket(object):
         if len(self._data) + newdatalen < self._capacity:
             self._data = self._data + str(data)
         else:
-            self._data = self._data + str(data)[:self._capacity - len(self._data) - 1]
+            self._data = self._data + str(data)[:self._capacity - len(self._data)]
             print("data overflow out of the bucket {}" % str(data)[self._capacity - len(self._data):])
         self._last_time = time()
         self.status = True
@@ -281,7 +281,7 @@ class leakyBucket(object):
     def write(self, lens):
         self._lock.acquire()
         output = self._data[:lens] if (len(self._data) >= lens) else self._data
-        self._data = self._data[lens+1:] if (len(self._data) >= lens) else str()
+        self._data = self._data[lens:] if (len(self._data) >= lens) else str()
         if len(self._data) == 0:
             self.status = False
         self._lock.release()
