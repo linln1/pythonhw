@@ -110,7 +110,7 @@ Test Results:
   ![bilibili](pyhw3/bilibili.jpg)
   ![bilibili](pyhw3/bilibili_2.jpg)
   
-> # ***2020/11/12 Third HW***: Using aiosqlite\sqlite to realize authentication from local_proxy to remote_proxy
+> # ***2020/11/12 Fourth HW***: Using aiosqlite\sqlite to realize authentication from local_proxy to remote_proxy
 create database in remote_server
 ```sql
     create database user;
@@ -141,3 +141,25 @@ I use ? placeholder so that the sql engine could recognize the variant correctly
 ![result](pyhw4/multiuser.jpg)
 
 ![result](pyhw4/result.jpg)
+
+> # ***2020/11/18 Fifth HW***: Using Token bucket to control the throughput 
+# overload protection
+## 漏桶算法和令牌桶算法
+## 原理： 给每个用户分配一个桶，每秒接受来自用户的请求，超出桶容量的部分直接丢弃，没有超过的部分放到桶里面，每秒处理k
+
+##令牌桶算法
+
+##每秒会有 r 个令牌放入桶中，或者说，每过 1/r 秒桶中增加一个令牌
+##桶中最多存放 b 个令牌，如果桶满了，新放入的令牌会被丢弃
+##当一个 n 字节的数据包到达时，消耗 n 个令牌，然后发送该数据包
+#3如果桶中可用令牌小于 n，则该数据包将被缓存或丢弃
+
+##漏桶算法
+
+##数据被填充到桶中,并以固定速率注入网络中,而不管数据流的突发性
+##如果桶是空的,不做任何事情
+##主机在每一个时间片向网络注入一个数据包,因此产生一致的数据流
+
+
+## 读的时候不需要流量控制，无论是从local_proxy读到还是从server读到，都直接存到桶里面
+## 有两个写进程需要一直运行，一个是从用户端发送到远程服务器，另一个是从远程服务器发送到客户端，都是while循环，当桶里面数据不为空，就发送数据
