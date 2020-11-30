@@ -17,16 +17,16 @@ async def post_json(request):
 def query_string(request):
     return json({"parsed":True, "args":request.args, "url":request.url, "query_string":request.query_string})
 
-@app('/put_stream', stream=True)
-async def app_run_handler(request):
-    result = ''
-    while True:
-        body = await request.stream.read()
-        if body is None:
-            break
-        result += body.decode('utf-8').replace('1', 'A')
-
-    return response.text(result)
+# @app('/put_stream', stream=True)
+# async def app_run_handler(request):
+#     result = ''
+#     while True:
+#         body = await request.stream.read()
+#         if body is None:
+#             break
+#         result += body.decode('utf-8').replace('1', 'A')
+#
+#     return response.text(result)
 
 if __name__ == "__main__":
     app.run(host="localhost", port = 8000)

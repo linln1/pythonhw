@@ -163,3 +163,12 @@ I use ? placeholder so that the sql engine could recognize the variant correctly
 
 ## 读的时候不需要流量控制，无论是从local_proxy读到还是从server读到，都直接存到桶里面
 ## 有两个写进程需要一直运行，一个是从用户端发送到远程服务器，另一个是从远程服务器发送到客户端，都是while循环，当桶里面数据不为空，就发送数据
+
+
+> # ***2020/11/27 Sixth HW***: Add Gui / Use QProcess to Start local
+
+## 改了原来代码中的很多bug
+
+![result](pyhw6/result.jpg)
+![result](pyhw6/result1.jpg)
+![result](pyhw6/result2.jpg)
