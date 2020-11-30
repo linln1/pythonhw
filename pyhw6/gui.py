@@ -10,7 +10,9 @@ from PyQt5.QtNetwork import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtWebSockets import *
 import humanfriendly
+import websockets
 import traceback
+import asyncio
 
 
 class WindowClass(QWidget):
@@ -43,13 +45,14 @@ class WindowClass(QWidget):
         self.setLayout(layout)
 
         self.processIdLine = QLineEdit()
-        self.bandWidth = QTextLine()
-        self.websocket = QWebSocket()
+        self.bandWidth = QLineEdit()
+        self.websocket = None
         self.process = QProcess()
         self.process.setProcessChannelMode(QProcess.MergedChannels)
-        self.process.finished.connect(self.processFinish)
+
         self.process.started.connect(self.processStart)
         self.process.readyReadStandardOutput.connect(self.getStatus)
+        self.process.finished.connect(self.processFinish)
 
     def onclickStart(self):
         w = QWidget()
@@ -90,6 +93,8 @@ class WindowClass(QWidget):
         vbox.addWidget(self.listenPort)
         vbox.addWidget(self.remoteHost)
         vbox.addWidget(self.remotePort)
+
+        vbox.addWidget(self.consolePort)
 
         vboxBtn.addWidget(self.connectBtn)
         vboxBtn.addWidget(self.backBtn)
@@ -156,18 +161,29 @@ class WindowClass(QWidget):
         cmdLine = f'{pythonExec} local.py --host={listenHost} --port={listenPort} --username={username} --password={password}'
         log.debug(f'cmd={cmdLine}')
         self.process.start(cmdLine)
+        self.widgetstack.append(QWidget())
+        self.process.waitForReadyRead()
+        #
+        # self.process.kill()
+        # async with websockets.connect('ws://127.0.0.1:' + self.consolePort.text()) as websocket:
+        #     await self.send_msg(websocket)
 
-        self.process.kill()
-
+    async def send_msg(websocket, logHint=''):
+        while True:
+            recv_text = await websocket.recv()
+            log.info(f'recv{logHint} bandwidth = {recv_text} per second')
 
     def getStatus(self, traceback=None):
         data = self.process.readAll()
         try:
             msg = data.data().decode().strip()
+            print(msg)
             log.debug(f'msg={msg}')
         except Exception as exc:
             log.error(f'{traceback.format_exc()}')
             exit(1)
+
+
 
     def processStart(self):
         process = self.sender()  # 此处等同于 self.process 只不过使用sender适应性更好
@@ -176,6 +192,10 @@ class WindowClass(QWidget):
         #self.startBtn.setText('Stop')
         self.processIdLine.setText(str(processId))
 
+        # async with websockets.connect('ws://127.0.0.1:' + self.consolePort.text()) as websocket:
+        #     await self.send_msg(websocket)
+
+        self.websocket = QWebSocket()
         self.websocket.connected.connect(self.websocketConnected)
         self.websocket.disconnected.connect(self.websocketDisconnected)
         self.websocket.textMessageReceived.connect(self.websocketMsgRcvd)
@@ -186,21 +206,27 @@ class WindowClass(QWidget):
         processId = process.processId()
         log.debug(f'end process {processId}')
         self.process.kill()
-        self.websocket.close()
 
     def websocketMsgRcvd(self, msg):
         if msg != None:
-            SuccessBtn = QPushButton()
-            SuccessBtn.setText("connect successfully")
-            sleep(1)
-            SuccessBtn.close()
-            self.widgetstack[-1].close()
-
-        log.debug(f'msg={msg}')
-        sendBandwidth , *_ = msg.split()
-        dt = datetime.datetime.now()
-        nowTime = dt.strftime('%Y-%m-%d %H:%M:%S ')
-        self.bandWidth.setText(f'{nowTime} {humanfriendly.format_size(int(sendBandwidth))}')
+            # Successdia = QDialog()
+            #             # SuccessBtn = QPushButton()
+            #             # SuccessBtn.setText('connect success')
+            #             # Successdia.showNormal()
+            #             # Successdia.close()
+            #self.widgetstack[-1].close()
+            w = self.widgetstack[-1]
+            self.widgetstack.append(w)
+            vbox = QVBoxLayout()
+            vbox.addWidget(self.processIdLine)
+            log.debug(f'msg={msg}')
+            sendBandwidth , *_ = msg.split()
+            dt = datetime.datetime.now()
+            nowTime = dt.strftime('%Y-%m-%d %H:%M:%S ')
+            self.bandWidth.setText(f'{nowTime} {sendBandwidth}')
+            vbox.addWidget(self.bandWidth)
+            w.setLayout(vbox)
+            w.show()
 
     def websocketConnected(self):#以加密形式发送数据
         self.websocket.sendTextMessage('secret')
@@ -220,7 +246,7 @@ if __name__=="__main__":
     log.addHandler(_consoleHandler)
     log.setLevel(logging.DEBUG)
 
-    app=QApplication(sys.argv)
-    win=WindowClass()
+    app = QApplication(sys.argv)
+    win = WindowClass()
     win.show()
     sys.exit(app.exec_())

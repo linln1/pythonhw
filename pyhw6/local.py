@@ -19,7 +19,7 @@ remoteProxyHost = '127.0.0.1'
 remotetunnelPort = 8889
 remotesocksPort= 8890
 
-global gSendBandwidth
+gSendBandwidth = None
 
 class MyError(Exception):
     pass
@@ -119,20 +119,37 @@ async def local_run(clientR, clientW):
         log.error(f'{traceback.format_exc()}')
         exit(1)
 
-async def getBandWidth():
-    async with aiosqlite.connect('cache.db') as db:
-        while True:
-            await asyncio.sleep(1)
-            async with db.execute("SELECT USERNAME, PASSWORD, BANDWIDTH FROM USER WHERE USERNAME=? AND PASSWORD=?;", (args.user, args.pwd, )) as cursor:
-                async for row in cursor:
-                    gSendBandwidth = row[2]
+# async def getBandWidth():
+#     global gSendBandwidth
+#     async with aiosqlite.connect('cache.db') as db:
+#         print('get the band width')
+#         while True:
+#             await asyncio.sleep(1)
+#             username = args.user
+#             password = args.pwd
+#             async with db.execute('SELECT * FROM USER;') as cur:
+#                 print(cur.rowcount)
+#                 async for row in cur:
+#                     if row[0] == username and row[1] == password:
+#                         gSendBandwidth = row[2]
+#                         print('{} : {} at {}bps' %(row[0], row[1], gSendBandwidth))
 
-async def localConsole(ws, path):
-    global gSendBandwidth
+async def recieve_dps(dpsr, dpsm, logHint=''):
+    while True:
+        log.info(f'{logHint} recieve_dps Recv DPS')
+        dps = await aioRead(dpsr, ReadMode.LINE, logHint='')
+        dps = dps.decode().split('\r\n')[0]
+        global gSendBandwidth
+        gSendBandwidth = int(dps)
+        #print(gSendBandwidth)
+        #print(gSendBandwidth)
+
+async def localConsole(ws, path ,logHint=None):
     try:
         while True:
             await asyncio.sleep(1)
-            msg = await ws.send(f'{gSendBandwidth}')
+            log.info(f'{logHint} localConsole Recv DPS')
+            await ws.send(f'{gSendBandwidth}')
     except websockets.exceptions.ConnectionClosedError as exc:
         log.error(f'{exc}')
     except websockets.exceptions.ConnectionClosedOK as exc:
@@ -141,22 +158,31 @@ async def localConsole(ws, path):
         log.error(f'{traceback.format_exc()}')
         exit(1)
 
+
+async def recvTask():
+    dpssrv = await asyncio.start_server(recieve_dps, host=args.listenHost, port=9999)
+    addrList = list([s.getsockname() for s in dpssrv.sockets])
+    log.info(f'LISTEN {addrList}')
+    async with dpssrv:
+        await dpssrv.serve_forever()
+
 async def localTask():
-    if args.consolePort:
-        ws_server = await websockets.serve(localConsole, '127.0.0.1', args.consolePort)
-        log.info(f'CONSOLE LISTEN {ws_server.sockets[0].getsockname()}')
-
-    asyncio.create_task(getBandWidth())
-
     srv = await asyncio.start_server(local_run, host=args.listenHost, port=args.listenPort)
     addrList = list([s.getsockname() for s in srv.sockets])
     log.info(f'LISTEN {addrList}')
     async with srv:
         await srv.serve_forever()
 
+async def webTask():
+    if args.consolePort:
+        ws_server = await websockets.serve(localConsole, '127.0.0.1', args.consolePort)
+        log.info(f'CONSOLE LISTEN [{ws_server.sockets[0].getsockname()}]')
+
 
 async def main():
+    asyncio.create_task(webTask())
     asyncio.create_task(localTask())
+    asyncio.create_task(recvTask())
     while True:
         await asyncio.sleep(1)
 
@@ -178,7 +204,7 @@ if __name__ == '__main__':
     _parser.add_argument('--port', dest='listenPort', metavar='listen_port', default= 8888, required=False, help='proxy listen port')
     _parser.add_argument('--username', dest='user', metavar='user', default='u1', help='username')
     _parser.add_argument('--password', dest='pwd', metavar='pwd', default='11', help='password')
-    _parser.add_argument('--console', dest='consolePort', metavar='console_port', default='8896', help='console port')
+    _parser.add_argument('--console', dest='consolePort', metavar='console_port', default=8896, help='console port')
 
     args = _parser.parse_args()
 
