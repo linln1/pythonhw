@@ -172,3 +172,5 @@ I use ? placeholder so that the sql engine could recognize the variant correctly
 ![result](pyhw6/result.jpg)
 ![result](pyhw6/result1.jpg)
 ![result](pyhw6/result2.jpg)
+
+> # ***2020/11/27 Seventh HW***: Using Sanic to write RESTful APIs
